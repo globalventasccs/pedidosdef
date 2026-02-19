@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Automotriz v3</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root { --blue: #002d5a; --accent: #007bff; }
+        body { font-family: sans-serif; background: #f4f4f4; padding: 10px; margin: 0; }
+        .app { max-width: 900px; margin: auto; background: white; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: var(--blue); color: white; padding: 20px; text-align: center; }
+        .tabs { display: flex; background: #ddd; }
+        .tabs button { flex: 1; padding: 15px; border: none; cursor: pointer; font-weight: bold; }
+        .tabs button.active { background: white; color: var(--blue); border-bottom: 4px solid var(--accent); }
+        .content { padding: 15px; }
+        input { width: 100%; padding: 12px; margin: 5px 0; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        .search-area { position: relative; }
+        .results-box { position: absolute; width: 100%; max-height: 300px; overflow-y: auto; background: white; border: 1px solid #999; z-index: 10; display: none; }
+        .item-res { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; display: flex; justify-content: space-between; }
+        .item-res:hover { background: #f0f7ff; }
+        .m-tag { font-size: 0.7rem; background: #444; color: white; padding: 2px 6px; border-radius: 3px; margin-right: 5px; }
+        .editor { background: #fffde7; padding: 15px; border: 1px solid #ffd600; margin: 15px 0; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.85rem; }
+        th { background: #eee; padding: 10px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+        .totals { text-align: right; padding: 15px; background: #fafafa; }
+        .actions { display: flex; gap: 10px; padding: 15px; }
+        .btn { flex: 1; padding: 15px; border: none; border-radius: 5px; color: white; font-weight: bold; cursor: pointer; }
+    </style>
+</head>
+<body>
+
+<div class="app">
+    <div id="capture-zone" style="background: white;">
+        <div class="header">
+            <h2 style="margin:0">GLOBAL AUTOMOTRIZ</h2>
+            <p style="margin:5px 0 0">Generador de Pedidos Oficial</p>
+        </div>
+
+        <div class="tabs">
+            <button id="t-bs" class="active" onclick="setList('bs')">BS GLOBAL</button>
+            <button id="t-desc" onclick="setList('desc')">DESC $</button>
+            <button id="t-euro" onclick="setList('euro')">EURO</button>
+        </div>
+
+        <div class="content">
+            <div style="display: flex; gap: 10px;">
+                <div style="flex:2"><label>Cliente:</label><input type="text" id="cliente" placeholder="Nombre..."></div>
+                <div style="flex:1"><label>Factor:</label><input type="number" id="factor" value="1.00" step="0.01" oninput="renderTable()"></div>
+            </div>
+
+            <div class="search-area">
+                <input type="text" id="search" onkeyup="doSearch()" placeholder="Buscar marca o producto..." autocomplete="off">
+                <div id="results" class="results-box"></div>
+            </div>
+
+            <div id="editor" class="editor" style="display:none">
+                <div style="display:flex; justify-content:space-between"><b id="ed-desc"></b><span id="ed-marca" class="m-tag"></span></div>
+                <div style="display:flex; gap:10px; margin-top:10px;">
+                    <div style="flex:1"><label>Precio:</label><input type="number" id="ed-price" step="0.001"></div>
+                    <div style="flex:1"><label>Cant:</label><input type="number" id="ed-qty" value="1"></div>
+                </div>
+                <button onclick="addToList()" style="width:100%; background:#2e7d32; color:white; border:none; padding:10px; margin-top:10px; cursor:pointer; border-radius:5px;">AÑADIR AL CARRITO</button>
+            </div>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Cant</th>
+                        <th>Producto</th>
+                        <th>Precio</th>
+                        <th>Total</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody id="cart-body"></tbody>
+            </table>
+
+            <div class="totals">
+                <div>Subtotal: <span id="sub">0.00</span></div>
+                <div class="big-total" style="font-size:1.5rem; color:#002d5a;">TOTAL: $<span id="total">0.00</span></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <button class="btn" style="background:#25D366" onclick="sendWs()">WhatsApp</button>
+        <button class="btn" style="background:#333" onclick="saveImg()">Guardar Imagen</button>
+    </div>
+</div>
+<script>
+    let current = 'bs';
+    let cart = [];
+    let sel = null;
+
+    // BASE DE DATOS - PARTE A (SQ)
+    const dataA = [
+        ["SQ15","SQ","FORMULA MARINA SQ 70-5 SPRAY (12) 440 CM3",7.00,5.85,6.10],
+        ["SQ21ALU","SQ","LIMPIA CARBURADOR SQ ALUMINIO (24)",6.40,5.35,5.60],
+        ["SQ23ALU","SQ","LIMPIA MOTOR SPRAY SQ ALUMINIO (24)",6.08,5.10,5.30],
+        ["SQ23GA","SQ","LIMPIA MOTOR SQ GALON (4)",21.00,17.65,18.35],
+        ["SQ24","SQ","LIMPIA TAPICERIA VELOUR SQ (24) 354CM3",6.00,5.05,5.25],
+        ["SQ27","SQ","LIMPIADOR ELECTRONICO SQ (24) 180CM3",11.30,9.50,9.85],
+        ["SQ40GOT","SQ","\"5X1\" CINCO X UNO SQ GOTERO 115CC (24)",4.65,3.90,4.05],
+        ["SQ40","SQ","\"5X1\" CINCO X UNO SQ SPRAY 235ML (24)",6.40,5.35,5.60],
+        ["SQ42","SQ","LIMPIA CAUCHOS SQ (12) 440CM3",8.00,6.70,7.00],
+        ["SQ16","SQ","FORMULA MARINA SQ 70-5 GALON (4)",23.00,19.30,20.10],
+        ["SQFMC","SQ","FORMULA MARINA SQ 70-5 CUÑETE 20 LTS",123.00,103.35,107.50],
+        ["SQFML","SQ","FORMULA MARINA SQ 70-5 LITRO (6)",11.75,9.85,10.25],
+        ["SQ8","SQ","BORNOL SQ (36/144) 40CM3",5.00,4.20,4.35],
+        ["SQFVAI","SQ","FRESCAROMA SURTIDO SQ (12)",5.90,4.95,5.15],
+        ["SQSCH","SQ","SHAMPOO Y CERA SQ 400ML (12)",6.25,5.25,5.45],
+        ["SQ35","SQ","PULITURA LIQUIDA SQ (24) 360CM3",9.50,8.00,8.30],
+        ["SQ35PEQ","SQ","PULITURA LIQUIDA SQ (24) 120CM3",4.30,3.60,3.75],
+        ["SQ29","SQ","LUSTRADOR SQ (24) 360CM3",11.75,9.85,10.25],
+        ["SQLUSM","SQ","LUSTRADOR MINI 120CC (24)",5.80,4.85,5.05],
+        ["SQ2","SQ","AGARRE SQ 70-12 (24) 160CM3",5.85,4.90,5.10],
+        ["SQ36","SQ","SILIFLON SQ (24) 235CM3",6.95,6.15,6.40],
+        ["SQ4S","SQ","AMBIENTADOR SPRAY SQ SURTIDO(144/36) 40CM3",4.00,3.40,3.50],
+        ["SQ37","SQ","SONAX SQ (24) 354CM3",7.85,6.60,6.85],
+        ["SQFE","SQ","FORMULA ELECTRICA SQ (24)",7.75,6.50,6.75],
+        ["SQ32PEQ","SQ","PORCELANA LIQUIDA SQ (24) 120CM3",5.00,4.20,4.35],
+        ["SQ32","SQ","PORCELANA LIQUIDA SQ (24) 360CM3",6.20,5.20,5.40],
+        ["SQ32LIT","SQ","PORCELANA LIQUIDA SQ (6) 1000CM3",13.50,11.35,11.80],
+        ["SQ38","SQ","TUMBA PINTURA SQ 70-4 (24) 354CM3",7.35,6.15,6.40],
+        ["SQA-440","SQ","TUMBA PINTURA SQ 70-4 (24) 400CM3",8.30,6.95,7.25],
+        ["SQMECALU","SQ","FORMULA MECANICA SQ 70-6 ALUMINIO",6.50,5.45,5.67],
+        ["SQFM24","SQ","FORMULA MARINA SQ 70-5 SPRAY (24) 354 CM3 ALUM",6.20,5.20,5.38],
+        ["SQ1ALU","SQ","SILICONE ABRILLANTADOR ALUMINIO (24)",6.60,5.50,5.75],
+        ["SQ1UVALU","SQ","SILICONE ABRILLANTADOR UVA ALUMINIO (24)",6.60,5.50,5.75],
+        ["SQ1FRALU","SQ","SILICONE ABRILLANTADOR FRESA ALUMINIO (24)",6.60,5.50,5.75],
+        ["SQALCUER","SQ","LIMPIA CUERO 235CC",6.75,5.65,5.90],
+        ["SQLCUER","SQ","LIMPIADOR DE CUEROS SQ (24) 360CM3",6.50,5.45,5.67],
+        ["SQ11ALU","SQ","DESMOLDEANTE SQ ALUMINIO (SILICONE ULTRA RAPIDO) (24)",6.65,5.55,5.75],
+        ["SQSCHGA","SQ","SHAMPOO SQ GALON (2)",17.85,15.00,15.55],
+        ["SQTEKA","SQ","ACEITE DE TEKA SPRAY (354CC) (24)",7.50,6.30,6.60],
+        ["SQFAMI","SQ","LIMPIADOR DE FAROS Y MICAS SQ (120ML) (24)",4.95,4.14,4.30]
+    ];
+// BASE DE DATOS - PARTE B (RESTO DE MARCAS)
+    const dataB = [
+        ["CLEANC","CLEAN CHAN","CUERO CLEAN CHAN GRANDE",7.00,5.00,6.10],
+        ["KIRKFIB","KIRKLAND","PAÑITOS DE MICROFIBRA KIRKLAND",2.60,1.90,2.30],
+        ["PEGALOKA","PEGA LOKA","PEGA LOKA 3",0.88,0.60,0.77],
+        ["TEIPCOB","COBRA","TEIPE COBRA (10)",2.20,1.50,1.95],
+        ["HAM-H4R","HAMMER","BOMBILLO H4 HAMMER 60/55W RALLY 30% (10)",5.25,3.90,4.60],
+        ["HAM-H7R","HAMMER","BOMBILLO H7 HAMMER 55W RALLY 30% (10)",3.65,2.70,3.20],
+        ["HAM-H3R","HAMMER","BOMBILLO H3 HAMMER 60W RALLY 30% (10)",2.40,1.75,2.10],
+        ["HAM-05R","HAMMER","BOMBILLO 9005 HAMMER 55W RALLY 30% (10)",4.95,3.65,4.30],
+        ["HAM-06R","HAMMER","BOMBILLO 9006 HAMMER 55W RALLY 30% (10)",4.95,3.65,4.30],
+        ["HAM-H11R","HAMMER","BOMBILLO H11 HAMMER 55W RALLY 30% (10)",5.10,3.75,4.45],
+        ["HAM-3156","HAMMER","BOMBILLO 3156 HAMMER BASE PLASTICA 1 CONTACTO (10)",1.70,1.30,1.50],
+        ["HAM-3156A","HAMMER","BOMBILLO 3156 HAMMER BASE PLASTICA 1 CONTACTO AMBAR (10)",1.70,1.30,1.50],
+        ["HAM-7506-1156","HAMMER","BOMBILLO 7506 HAMMER UN CONTACTO (10)",0.70,0.50,0.60],
+        ["HAM-2722-T5","HAMMER","BOMBILLO 2722 (T5) HAMMER (10)",0.30,0.20,0.20],
+        ["HAM-0921-T15","HAMMER","BOMBILLO 0921 (T15) HAMMER (10)",0.50,0.30,0.40],
+        ["HAM-7440-T20 1C","HAMMER","BOMBILLO 7440 HAMMER 1 CONT BASE VIDRIO (10)",2.00,1.50,1.75],
+        ["HE1034","HELLA","BOMBILLO HELLA 1034 (10)",2.60,1.95,2.25],
+        ["HE7506","HELLA","BOMBILLO HELLA 7506 (10)",2.40,1.80,2.10],
+        ["HET10","HELLA","BOMBILLO HELLA T10 (10)",1.55,1.15,1.35],
+        ["HE3157BP","HELLA","BOMBILLO HELLA 3157 BASE PLASTICA (10)",3.40,2.50,2.95],
+        ["HELLA12","HELLA","CEPILLO HELLA LIMPIAPARABRISAS 12\"",5.50,4.50,4.80],
+        ["HELLA14","HELLA","CEPILLO HELLA LIMPIAPARABRISAS 14\"",5.50,4.50,4.80],
+        ["HELLA16","HELLA","CEPILLO HELLA LIMPIAPARABRISAS 16\"",5.50,4.50,4.80],
+        ["HELLA16MF","HELLA","CEPILLO HELLA LIMPIAPARABRISAS 16\" MULTIFUNCIONAL",6.50,5.50,5.70],
+        ["HELLA17","HELLA","CEPILLO HELLA LIMPIAPARABRISAS 17\"",5.50,4.50,4.80],
+        ["HELLA24","HELLA","CEPILLO HELLA LIMPIAPARABRISAS 24\"",5.50,4.50,4.80],
+        ["HELLA26MF","HELLA","CEPILLO HELLA LIMPIAPARABRISAS 26\" MULTIFUNCIONAL",6.50,5.50,5.70],
+        ["OCTANOL","OCTANOL","ADITIVO GASOLINA OCTANOL (12)",5.25,3.85,4.50],
+        ["H3ZPAI","ZPAI","H3 ESTANDAR ZPAI (10)",2.25,1.60,1.95],
+        ["H11ZPAI","ZPAI","H11 ESTANDAR ZPAI (10)",3.65,2.60,3.20],
+        ["FLUDOT3PEQ","FLUITEC","LIGA FLUITEC DOT3 290CC (24)",3.95,2.67,3.45],
+        ["FLUDOT3LIT","FLUITEC","LIGA FLUITEC DOT3 1LIT (12)",11.00,7.67,9.85],
+        ["FLUDOT4PEQ","FLUITEC","LIGA FLUITEC DOT4 290CC (24)",4.50,3.10,3.95],
+        ["FLUDOT4LIT","FLUITEC","LIGA FLUITEC DOT4 1LIT (12)",13.00,8.95,11.45],
+        ["C1-01","COMMA","LIMPIADOR INYECTORES COMMA",6.50,4.45,5.65],
+        ["C1-08","COMMA","FLUSHING PARA MOTOR COMMA",8.25,5.65,7.25],
+        ["C1-10","COMMA","FLUSHING PARA RADIADOR",6.30,4.30,5.55],
+        ["ROD-001","RODANOL","GRASA SERVICIO LIVIANO AZUL AZ-90",6.50,4.40,5.65],
+        ["ROD-002","RODANOL","GRASA PARA TRIPOIDE GT2000-2",7.00,4.75,6.15],
+        ["ROD-011","RODANOL","GRASA FIBROSA-3",6.50,4.50,5.65],
+        ["ARM-18136","ARMOR ALL","PROTECTOR ORIGINAL ARMOR ALL PUMP 4 OZ",4.40,3.00,3.88],
+        ["ARM-311B","ARMOR ALL","PROTECTOR ORIGINAL ARMOR ALL PUMP 10 OZ",5.65,4.75,4.95],
+        ["ARM-9767B","ARMOR ALL","LIMPIEZA DE NEUMATICOS EN ESPUMA ARMOR ALL 4 OZ",6.65,4.50,5.80],
+        ["ARM-9963W","ARMOR ALL","TRATAMIENTO DE CUERO EN GEL ARMOR ALL 18 OZ",15.00,10.30,13.30],
+        ["GOOP-00046","GOOP","GOOP JABON ORANGE DESENGRASANTE LIQUIDO PIEDRA POMEZ 1 GAL",37.00,25.00,32.00],
+        ["GOOP-00549","GOOP","GOOP JABON ORANGE DESENGRASANTE LIQUIDO PIEDRA POMEZ 16 OZ",8.70,5.86,7.50],
+        ["H7-001","H-7","DESENGRASANTE H-7 1 GALON / 3.790 ML",19.00,13.00,16.75],
+        ["H7-001A","H-7","DESENGRASANTE H-7 CUNETE (6 GALONES)",115.00,78.00,100.00],
+        ["H7-002","H-7","DESENGRASANTE H-7 32 OZ / 949 ML",8.40,5.67,7.30],
+        ["LT-U1P-10105","LITTLE TREE","PINITO LITTLE TREES VANILLAROMA 1 PACK",1.65,1.10,1.42],
+        ["LT-U1P-10155","LITTLE TREE","PINITO LITTLE TREES BLACK ICE 1 PACK",1.65,1.10,1.42],
+        ["LT-U1P-10189","LITTLE TREE","PINITO ITTLE TREES NEW CAR SCENT 1 PACK",1.65,1.10,1.42],
+        ["LT-U1P-10311","LITTLE TREE","PINITO LITTLE TREES WILD CHERRY 1 PACK",1.65,1.10,1.42],
+        ["LT-U1P-10312","LITTLE TREE","PINITO LITTLE TREES STRAWBERRY 1 PACK",1.65,1.10,1.42],
+        ["LT-U1P-10317","LITTLE TREE","PINITO LITTLE TREES COCONUT 1 PACK",1.65,1.10,1.42],
+        ["LT-U1P-10967","LITTLE TREE","PINITO LITTLE TREES PIÑA COLADA 1 PACK",1.65,1.10,1.42],
+        ["SNX-03143000","SONAX","SONAX SHAMPOO CONCENTRADO BRILLO 1 LT",9.90,6.68,8.60],
+   	["SNX-03711000","SONAX","SONAX VISION CLARA 1:100 CONCENTRADO DISPLAY 25ML",3.25,2.20,2.85],
+    	["SNX-04173000","SONAX","SONAX ESPONJA APLICADORA",5.65,3.85,4.95],
+    	["SSAC-4003","SMART SHINE","LLAVE CRUZ SMART SHINE 14PULG / 35.56CM",12.50,8.50,11.00],
+    	["SSAC-4011","SMART SHINE","TRIANGULO DE SEGURIDAD REFLECTIVO SMART SHINE",3.10,2.10,2.70],
+    	["STP-8262B","STP","STP TRATAMIENTO DE ACEITE 15 OZ",8.00,5.45,7.00],
+    	["STP-18566","STP","STP FLUSH DE MOTOR ALTO KM 15 OZ (443 ML)",11.80,8.00,10.25],
+    	["STP-2636","STP","STP TRATAMIENTO HUMO 14.5 OZ",8.30,5.66,7.30],
+    	["STP-17043","STP","STP AUMENTADOR OCTANAJE 12 OZ",11.00,7.45,9.50],
+    	["STP-18040G","STP","STP AUMENTADOR OCTANAJE 5.25 OZ",7.00,4.75,6.00],
+    	["STP-17927","STP","STP LIQUIDO DE DIRECCION 32 OZ",14.85,10.00,12.90],
+    	["STP-18041G","STP","STP LIMPIADOR INYECTORES SUPER CONCENTRADO 5.25 OZ",6.40,4.35,5.60],
+    	["STP-17044","STP","STP LIMPIADOR INYECTORES SUPER CONCENTRADO 12 OZ",9.00,6.10,7.85],
+    	["STP-18666","STP","STP LIQUIDO DE DIRECCION DETIENE FUGA LIQUIDO 12 OZ",7.25,4.90,6.30],
+    	["STP-18667","STP","STP LIQUIDO DE DIRECCION 12 OZ",6.40,4.32,5.60],
+    	["WD40-52205","WD-40","WD-40 Aerosol 5.5 Oz/191 ML",8.40,5.67,7.30],	
+	["WD40-52208","WD-40","WD-40 AEROSOL 8 OZ / 227ML",10.50,7.08,9.15],
+    	["WD40-52211","WD-40","WD-40 AEROSOL 11 OZ / 372ML",12.60,8.56,11.00],
+    	["WD40-300554","WD-40","Wd-40 Limpiador Contactos 8 Oz",13.00,8.85,11.35]
+    ];
+
+    // UNIFICAR TODO
+    const master = [...dataA, ...dataB];
+    const db = { bs: [], desc: [], euro: [] };
+    
+    master.forEach(r => {
+        db.bs.push({c:r[0], m:r[1], d:r[2], p:r[3]});
+        db.desc.push({c:r[0], m:r[1], d:r[2], p:r[4]});
+        db.euro.push({c:r[0], m:r[1], d:r[2], p:r[5]});
+    });
+function setList(m) {
+        current = m;
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+        document.getElementById('t-'+m).classList.add('active');
+        document.getElementById('results').style.display = 'none';
+        renderTable();
+    }
+
+    function doSearch() {
+        const v = document.getElementById('search').value.toUpperCase();
+        const res = document.getElementById('results');
+        if(v.length < 1) { res.style.display = 'none'; return; }
+        
+        const matches = db[current].filter(i => 
+            i.m.includes(v) || i.d.includes(v) || i.c.includes(v)
+        );
+        
+        res.innerHTML = matches.map(i => `
+            <div class="item-res" onclick='selectItem(${JSON.stringify(i)})'>
+                <span><span class="m-tag">${i.m}</span> ${i.d}</span>
+                <b>$${i.p.toFixed(2)}</b>
+            </div>
+        `).join('');
+        res.style.display = 'block';
+    }
+
+    function selectItem(item) {
+        sel = item;
+        document.getElementById('ed-desc').innerText = item.d;
+        document.getElementById('ed-marca').innerText = item.m;
+        document.getElementById('ed-price').value = item.p;
+        document.getElementById('ed-qty').value = 1;
+        document.getElementById('editor').style.display = 'block';
+        document.getElementById('results').style.display = 'none';
+        document.getElementById('search').value = '';
+    }
+
+    function addToList() {
+        const f = parseFloat(document.getElementById('factor').value) || 1;
+        const pOriginal = parseFloat(document.getElementById('ed-price').value);
+        cart.push({
+            m: sel.m,
+            d: sel.d,
+            p: pOriginal * f,
+            q: parseInt(document.getElementById('ed-qty').value) || 1
+        });
+        document.getElementById('editor').style.display = 'none';
+        renderTable();
+    }
+
+    function renderTable() {
+        const b = document.getElementById('cart-body');
+        b.innerHTML = '';
+        let s = 0;
+        cart.forEach((item, i) => {
+            const t = item.q * item.p;
+            s += t;
+            b.innerHTML += `<tr>
+                <td>${item.q}</td>
+                <td><span class="m-tag">${item.m}</span> ${item.d}</td>
+                <td>${item.p.toFixed(2)}</td>
+                <td><b>${t.toFixed(2)}</b></td>
+                <td onclick="cart.splice(${i},1);renderTable()" style="color:red; cursor:pointer">✕</td>
+            </tr>`;
+        });
+        document.getElementById('sub').innerText = s.toFixed(2);
+        document.getElementById('total').innerText = s.toFixed(2);
+    }
+
+    function sendWs() {
+        let m = `*PEDIDO GLOBAL AUTOMOTRIZ*\n👤 *CLIENTE:* ${document.getElementById('cliente').value.toUpperCase()}\n\n`;
+        cart.forEach(i => m += `• ${i.q}x [${i.m}] ${i.d} ($${i.p.toFixed(2)})\n`);
+        m += `\n*TOTAL:* $${document.getElementById('total').innerText}`;
+        window.open(`https://wa.me/?text=${encodeURIComponent(m)}`, '_blank');
+    }
+
+    function saveImg() {
+        html2canvas(document.querySelector("#capture-zone")).then(canvas => {
+            const l = document.createElement('a');
+            l.download = "Pedido_Global.png";
+            l.href = canvas.toDataURL();
+            l.click();
+        });
+    }
+</script>
+</body>
+</html>
